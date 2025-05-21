@@ -1,0 +1,552 @@
+
+---
+title: "22020670 Assignment02"
+output:
+  html_document:
+    toc: true
+---
+
+
+```{r}
+#Uploading the Dataset 
+
+library(SparkR)
+
+# Corrected vector of all file paths
+file_paths <- c(
+  "/FileStore/tables/yellow_tripdata_2020_01.parquet",
+  "/FileStore/tables/yellow_tripdata_2020_02.parquet",
+  "/FileStore/tables/yellow_tripdata_2020_03.parquet",
+  "/FileStore/tables/yellow_tripdata_2020_04.parquet",
+  "/FileStore/tables/yellow_tripdata_2020_05.parquet",
+  "/FileStore/tables/yellow_tripdata_2020_06.parquet",
+  "/FileStore/tables/yellow_tripdata_2020_07.parquet",
+  "/FileStore/tables/yellow_tripdata_2020_08.parquet",
+  "/FileStore/tables/yellow_tripdata_2020_09.parquet",
+  "/FileStore/tables/yellow_tripdata_2020_10.parquet",
+  "/FileStore/tables/yellow_tripdata_2020_11.parquet",
+  "/FileStore/tables/yellow_tripdata_2020_12.parquet"
+)
+
+# Load them all
+df_NYC_TAXI <- read.parquet(file_paths)
+
+# Show result
+display(df_NYC_TAXI)
+```
+
+
+```{r}
+library(SparkR)
+
+# Step 1: Identify numeric columns (integer or double)
+numeric_cols <- colnames(df_NYC_TAXI)[sapply(SparkR::dtypes(df_NYC_TAXI), function(x) x %in% c("integer", "double"))]
+
+# Step 2: Optionally exclude specific columns with excessive nulls
+excluded_cols <- c("congestion_surcharge", "airport_fee")
+numeric_cols <- setdiff(numeric_cols, excluded_cols)
+
+# Step 3: Initialize output dataframe
+outlier_summary <- data.frame(
+  Column = character(),
+  Q1 = numeric(),
+  Q3 = numeric(),
+  IQR = numeric(),
+  Lower_Bound = numeric(),
+  Upper_Bound = numeric(),
+  Outlier_Count = integer(),
+  stringsAsFactors = FALSE
+)
+
+# Step 4: Loop through numeric columns to calculate outliers
+for (col in numeric_cols) {
+  tryCatch({
+    # Calculate Q1 and Q3 using approxQuantile
+    q_list <- approxQuantile(df_NYC_TAXI, col, c(0.25, 0.75), relativeError = 0.01)
+    Q1 <- as.numeric(q_list[1])
+    Q3 <- as.numeric(q_list[2])
+
+    # Skip constant or invalid columns
+    if (Q1 == Q3 || is.na(Q1) || is.na(Q3)) next
+
+    # IQR and bounds
+    IQR_val <- Q3 - Q1
+    lower_bound <- Q1 - 1.5 * IQR_val
+    upper_bound <- Q3 + 1.5 * IQR_val
+
+    # Count outliers
+    outlier_rows <- where(df_NYC_TAXI, df_NYC_TAXI[[col]] < lower_bound | df_NYC_TAXI[[col]] > upper_bound)
+    outlier_count <- count(outlier_rows)
+
+    # Store result
+    outlier_summary <- rbind(outlier_summary, data.frame(
+      Column = col,
+      Q1 = Q1,
+      Q3 = Q3,
+      IQR = IQR_val,
+      Lower_Bound = lower_bound,
+      Upper_Bound = upper_bound,
+      Outlier_Count = outlier_count,
+      stringsAsFactors = FALSE
+    ))
+  }, error = function(e) {
+    message(paste("Skipped column:", col, "->", e$message))
+  })
+}
+
+# Step 5: Display final summary
+print(outlier_summary)
+
+```
+
+
+```{r}
+library(SparkR)
+
+# Step 1: Get numeric columns and exclude specified ones
+all_numeric <- colnames(df_NYC_TAXI)[sapply(SparkR::dtypes(df_NYC_TAXI), function(x) x %in% c("integer", "double"))]
+excluded_cols <- c("congestion_surcharge", "airport_fee")
+numeric_cols <- setdiff(all_numeric, excluded_cols)
+
+# Step 2: Initialize cleaned DataFrame
+df_clean <- df_NYC_TAXI
+
+# Step 3: Loop through columns to remove outliers using IQR
+for (col in numeric_cols) {
+  tryCatch({
+    # Compute Q1 and Q3
+    q_list <- approxQuantile(df_clean, col, c(0.25, 0.75), relativeError = 0.01)
+    Q1 <- as.numeric(q_list[1])
+    Q3 <- as.numeric(q_list[2])
+
+    # Skip constant or invalid columns
+    if (Q1 == Q3 || is.na(Q1) || is.na(Q3)) next
+
+    IQR_val <- Q3 - Q1
+    lower <- Q1 - 1.5 * IQR_val
+    upper <- Q3 + 1.5 * IQR_val
+
+    # Filter out outliers for the current column
+    df_clean <- where(df_clean, df_clean[[col]] >= lower & df_clean[[col]] <= upper)
+
+  }, error = function(e) {
+    message(paste("Skipping column:", col, "->", e$message))
+  })
+}
+
+# Step 4: Show cleaned data
+showDF(df_clean, numRows = 10)
+library(SparkR)
+
+# Step 1: Get numeric columns and exclude specified ones
+all_numeric <- colnames(df_NYC_TAXI)[sapply(SparkR::dtypes(df_NYC_TAXI), function(x) x %in% c("integer", "double"))]
+excluded_cols <- c("congestion_surcharge", "airport_fee")
+numeric_cols <- setdiff(all_numeric, excluded_cols)
+
+# Step 2: Initialize cleaned DataFrame
+df_clean <- df_NYC_TAXI
+
+# Step 3: Loop through columns to remove outliers using IQR
+for (col in numeric_cols) {
+  tryCatch({
+    # Compute Q1 and Q3
+    q_list <- approxQuantile(df_clean, col, c(0.25, 0.75), relativeError = 0.01)
+    Q1 <- as.numeric(q_list[1])
+    Q3 <- as.numeric(q_list[2])
+
+    # Skip constant or invalid columns
+    if (Q1 == Q3 || is.na(Q1) || is.na(Q3)) next
+
+    IQR_val <- Q3 - Q1
+    lower <- Q1 - 1.5 * IQR_val
+    upper <- Q3 + 1.5 * IQR_val
+
+    # Filter out outliers for the current column
+    df_clean <- where(df_clean, df_clean[[col]] >= lower & df_clean[[col]] <= upper)
+
+  }, error = function(e) {
+    message(paste("Skipping column:", col, "->", e$message))
+  })
+}
+
+# Step 4: Show cleaned data
+showDF(df_clean, numRows = 10)
+
+```
+
+
+```{r}
+
+#Task - Calculate the average fare per mile (fare_amount / trip_distance) for each PULocationID.
+
+# Load SparkR
+library(SparkR)
+
+# Step 1: Filter trips with valid fare and distance
+df_filtered <- SparkR::filter(
+  df_NYC_TAXI,
+  (df_NYC_TAXI$trip_distance > 0) & (df_NYC_TAXI$fare_amount > 0)
+)
+
+# Step 2: Add a new column: fare_per_distance
+df_ratio <- withColumn(
+  df_filtered,
+  "fare_per_distance",
+  df_filtered$fare_amount / df_filtered$trip_distance
+)
+
+# Step 3: Use groupBy and agg to calculate average fare_per_distance
+avg_fare_per_mile <- agg(
+  groupBy(df_ratio, "PULocationID"),
+  avg_fare_per_mile = avg(df_ratio$fare_per_distance)
+)
+
+# Step 4: Display the results
+display(avg_fare_per_mile)
+
+
+```
+
+
+```{r}
+# Collect Spark DataFrame
+df_local <- SparkR::collect(avg_fare_per_mile)
+
+# Load dplyr
+library(dplyr)
+
+# Get top 10 highest avg fare per mile
+top_10_high <- df_local %>%
+  arrange(desc(avg_fare_per_mile)) %>%
+  slice(1:10)
+
+# Get top 10 lowest avg fare per mile
+top_10_low <- df_local %>%
+  arrange(avg_fare_per_mile) %>%
+  slice(1:10)
+
+# Combine into a well-formatted table
+comparison_result <- data.frame(
+  Rank = 1:10,
+  High_PULocationID = top_10_high$PULocationID,
+  High_avg_fare_per_mile = round(top_10_high$avg_fare_per_mile, 2),
+  Low_PULocationID = top_10_low$PULocationID,
+  Low_avg_fare_per_mile = round(top_10_low$avg_fare_per_mile, 2)
+)
+
+# Print as a proper table
+knitr::kable(comparison_result, caption = "Top 10 Highest vs Lowest Average Fare per Mile by PULocationID")
+
+```
+
+
+```{r}
+#Task -Compare the top 10 zones with the highest and lowest average fare per mile.
+
+### Load SparkR
+library(SparkR)
+
+# Step 1: Filter valid records (avoid divide-by-zero)
+df_valid <- SparkR::filter(
+  df_NYC_TAXI,
+  (df_NYC_TAXI$trip_distance > 0) & (df_NYC_TAXI$fare_amount > 0)
+)
+
+# Step 2: Add fare_per_mile column
+df_fare <- withColumn(df_valid, "fare_per_mile", df_valid$fare_amount / df_valid$trip_distance)
+
+# Step 3: Extract hour from pickup timestamp
+df_with_hour <- withColumn(df_fare, "pickup_hour", hour(df_valid$tpep_pickup_datetime))
+
+# Step 4: Create Peak vs Off-Peak label
+# Peak hours = 7–10 AM and 4–7 PM
+df_peak_flag <- withColumn(
+  df_with_hour,
+  "time_category",
+  when((df_with_hour$pickup_hour >= 7 & df_with_hour$pickup_hour <= 10) | 
+       (df_with_hour$pickup_hour >= 16 & df_with_hour$pickup_hour <= 19), "Peak")
+  %>% otherwise("Off-Peak")
+)
+
+# Step 5: Calculate average fare per mile by PULocationID and time category
+grouped_df <- groupBy(df_peak_flag, df_peak_flag$PULocationID, df_peak_flag$time_category)
+
+avg_fare_peak_offpeak <- agg(
+  grouped_df,
+  avg_fare_per_mile = avg(df_peak_flag$fare_per_mile)
+)
+
+# Step 6: View results
+display(avg_fare_peak_offpeak)
+
+```
+
+
+```{r}
+#Task-Compare the top 10 zones with the highest and lowest average fare per mile.
+
+# Extract hour and day of week from pickup timestamp
+df_analysis <- withColumn(df_ratio, "hour_of_day", hour(df_ratio$tpep_pickup_datetime))
+df_analysis <- withColumn(df_analysis, "weekday", dayofweek(df_analysis$tpep_pickup_datetime))  # Sunday = 1
+
+# Define time bands: Weekday Peak Hours
+df_analysis <- withColumn(
+  df_analysis,
+  "time_band",
+  when(
+    (df_analysis$weekday >= 2 & df_analysis$weekday <= 6) &
+    ((df_analysis$hour_of_day >= 7 & df_analysis$hour_of_day <= 10) |
+     (df_analysis$hour_of_day >= 16 & df_analysis$hour_of_day <= 19)),
+    "Peak Hours"
+  ) %>% otherwise("Off-Peak Hours")
+)
+
+# Aggregate average fare per mile by zone and time band
+fare_summary <- agg(
+  groupBy(df_analysis, df_analysis$PULocationID, df_analysis$time_band),
+  avg_fare_mile = avg(df_analysis$fare_per_distance)
+)
+
+# Bring data into R for local manipulation
+fare_summary_r <- SparkR::collect(fare_summary)
+
+library(dplyr)
+
+# Separate peak and off-peak records
+peak_group <- fare_summary_r %>% filter(time_band == "Peak Hours")
+offpeak_group <- fare_summary_r %>% filter(time_band == "Off-Peak Hours")
+
+# Identify top and bottom 10 fare zones in each time period
+peak_top10 <- peak_group %>% arrange(desc(avg_fare_mile)) %>% slice_head(n = 10)
+peak_low10 <- peak_group %>% arrange(avg_fare_mile) %>% slice_head(n = 10)
+
+offpeak_top10 <- offpeak_group %>% arrange(desc(avg_fare_mile)) %>% slice_head(n = 10)
+offpeak_low10 <- offpeak_group %>% arrange(avg_fare_mile) %>% slice_head(n = 10)
+
+# Display comparison tables
+cat("🔷 Top 10 Peak Zones with Highest Average Fare per Mile:\n")
+print(peak_top10)
+
+cat("\n🔻 Top 10 Peak Zones with Lowest Average Fare per Mile:\n")
+print(peak_low10)
+
+cat("\n🔷 Top 10 Off-Peak Zones with Highest Average Fare per Mile:\n")
+print(offpeak_top10)
+
+cat("\n🔻 Top 10 Off-Peak Zones with Lowest Average Fare per Mile:\n")
+print(offpeak_low10)
+
+
+
+
+```
+
+
+```{r}
+#Task-Analyze potential temporal effects by repeating the analysis for peak vs. off peak hours using the tpep_pickup_datetime field. 
+
+library(dplyr)
+library(ggplot2)
+
+# Add a label for category type
+peak_top10 <- peak_top10 %>% mutate(time_band = "Peak", category = "Top 10")
+peak_low10 <- peak_low10 %>% mutate(time_band = "Peak", category = "Bottom 10")
+offpeak_top10 <- offpeak_top10 %>% mutate(time_band = "Off-Peak", category = "Top 10")
+offpeak_low10 <- offpeak_low10 %>% mutate(time_band = "Off-Peak", category = "Bottom 10")
+
+# Combine top 10 for Peak & Off-Peak
+top10_combined <- bind_rows(peak_top10, offpeak_top10)
+bottom10_combined <- bind_rows(peak_low10, offpeak_low10)
+# Ensure ordered factors for consistent bar chart display
+top10_combined <- top10_combined %>%
+  mutate(PULocationID = factor(PULocationID, levels = unique(PULocationID)))
+
+bottom10_combined <- bottom10_combined %>%
+  mutate(PULocationID = factor(PULocationID, levels = unique(PULocationID)))
+ggplot(top10_combined, aes(x = PULocationID, y = avg_fare_mile, fill = time_band)) +
+  geom_bar(stat = "identity", position = "dodge") +labs(
+    title = "Top 10 Zones by Avg Fare per Mile (Peak vs Off-Peak)",
+    x = "PULocationID",
+    y = "Average Fare per Mile",
+    fill = "Time Band"
+  ) +
+  theme_minimal()
+
+
+
+```
+
+
+```{r}
+# Ensure ascending order
+bottom10_combined <- bottom10_combined %>%
+  arrange(avg_fare_mile) %>%
+  mutate(PULocationID = factor(PULocationID, levels = unique(PULocationID)))
+
+# Plot
+ggplot(bottom10_combined, aes(x = PULocationID, y = avg_fare_mile, fill = time_band)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Bottom 10 Zones by Avg Fare per Mile",
+    x = "PULocationID",
+    y = "Average Fare per Mile",
+    fill = "Time Band"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+
+```{r}
+#Count trips by PULocationID and DOLocationID
+
+# STEP 1: Count pickups by PULocationID
+pu <- SparkR::count(SparkR::groupBy(df_NYC_TAXI, df_NYC_TAXI$PULocationID))
+colnames(pu) <- c("LocationID", "trip_count")
+pu_r <- SparkR::collect(pu)
+
+# STEP 2: Count drop-offs by DOLocationID
+do <- SparkR::count(SparkR::groupBy(df_NYC_TAXI, df_NYC_TAXI$DOLocationID))
+colnames(do) <- c("LocationID", "trip_count")
+do_r <- SparkR::collect(do)
+
+# STEP 3: Top 10 pickup and drop-off zones
+library(dplyr)
+
+top10_pu <- pu_r %>% arrange(desc(trip_count)) %>% slice(1:10)
+top10_do <- do_r %>% arrange(desc(trip_count)) %>% slice(1:10)
+
+# STEP 4: Print tables for pickup and drop-off zones
+cat("🔷 Top 10 Pickup Hotspots:\n")
+print(top10_pu)
+
+cat("\n🔻 Top 10 Drop-off Hotspots:\n")
+print(top10_do)
+
+library(ggplot2)
+
+ggplot(top10_pu, aes(x = reorder(LocationID, -trip_count), y = trip_count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Top 10 Pickup Hotspots", x = "LocationID", y = "Trip Count") +
+  theme_minimal()
+
+```
+
+
+```{r}
+library(scales)  # for comma formatting
+
+ggplot(top10_do, aes(x = reorder(LocationID, -trip_count), y = trip_count)) +
+  geom_bar(stat = "identity", fill = "darkgreen") +
+  labs(title = "Top 10 Drop-off Hotspots", x = "LocationID", y = "Trip Count") +
+  scale_y_continuous(labels = comma) +
+  theme_minimal()
+
+```
+
+
+```{r}
+#Task: Identify the top 10 pickup and drop off zones during: Morning rush (7AM–10AM) ,Evening peak (4PM–7PM) 
+
+library(SparkR)
+
+# Step 1: Extract hour from pickup timestamp
+df_NYC_TAXI <- withColumn(df_NYC_TAXI, "pickup_hour", hour(df_NYC_TAXI$tpep_pickup_datetime))
+
+# Step 2: Filter for Morning Rush (7–10 AM)
+df_morning <- SparkR::filter(df_NYC_TAXI, df_NYC_TAXI$pickup_hour >= 7 & df_NYC_TAXI$pickup_hour <= 10)
+
+# Step 3: Filter for Evening Peak (4–7 PM)
+df_evening <- SparkR::filter(df_NYC_TAXI, df_NYC_TAXI$pickup_hour >= 16 & df_NYC_TAXI$pickup_hour <= 19)
+
+# Step 4: Count pickups and drop-offs for Morning
+morning_pickup <- SparkR::count(SparkR::groupBy(df_morning, "PULocationID"))
+morning_dropoff <- SparkR::count(SparkR::groupBy(df_morning, "DOLocationID"))
+
+# Step 5: Count pickups and drop-offs for Evening
+evening_pickup <- SparkR::count(SparkR::groupBy(df_evening, "PULocationID"))
+evening_dropoff <- SparkR::count(SparkR::groupBy(df_evening, "DOLocationID"))
+
+# Step 6: Collect to local R data frames
+morning_pickup_r <- SparkR::collect(morning_pickup)
+morning_dropoff_r <- SparkR::collect(morning_dropoff)
+evening_pickup_r <- SparkR::collect(evening_pickup)
+evening_dropoff_r <- SparkR::collect(evening_dropoff)
+
+# Step 7: Rename columns
+colnames(morning_pickup_r) <- c("LocationID", "TripCount")
+colnames(morning_dropoff_r) <- c("LocationID", "TripCount")
+colnames(evening_pickup_r) <- c("LocationID", "TripCount")
+colnames(evening_dropoff_r) <- c("LocationID", "TripCount")
+
+library(dplyr)
+
+top10_morning_pu <- morning_pickup_r %>% arrange(desc(TripCount)) %>% slice(1:10)
+top10_morning_do <- morning_dropoff_r %>% arrange(desc(TripCount)) %>% slice(1:10)
+
+top10_evening_pu <- evening_pickup_r %>% arrange(desc(TripCount)) %>% slice(1:10)
+top10_evening_do <- evening_dropoff_r %>% arrange(desc(TripCount)) %>% slice(1:10)
+
+cat("🔷 Top 10 Pick up zones during Morning Rush(7AM-10AM):\n")
+print(top10_morning_pu)
+
+cat("\n🔻 Top 10 Drop-off zones during Morning Rush(7AM-10AM):\n")
+print(top10_morning_do)
+
+cat("🔷 Top 10 Pick up zones during Evening Rush(4PM-7PM):\n")
+print(top10_evening_pu)
+
+cat("\n🔻 Top 10 Drop-off zones during Evening Rush(4PM-7PM):\n")
+print(top10_evening_do)
+
+```
+
+
+```{r}
+library(ggplot2)
+
+library(scales)  # for comma formatting
+# Morning Pickup
+ggplot(top10_morning_pu, aes(x = reorder(factor(LocationID), -TripCount), y = TripCount)) +
+  geom_bar(stat = "identity", fill = "purple") +
+  labs(title = "Top 10 Pickup Zones during Morning Rush (7AM–10AM)", x = "Zone", y = "Trip Count") +
+  scale_y_continuous(labels = comma) +
+  theme_minimal()
+
+
+```
+
+
+```{r}
+# Morning Drop-off
+ggplot(top10_morning_do, aes(x = reorder(factor(LocationID), -TripCount), y = TripCount)) +
+  geom_bar(stat = "identity", fill = "lightgreen") +
+  labs(title = "Top 10 Drop Off Zones during Evening Rush (4PM–7PM)", x = " Zone", y = "Trip Count") +
+  scale_y_continuous(labels = comma) +
+  theme_minimal()
+
+```
+
+
+```{r}
+# Evening Pick up
+ggplot(top10_evening_pu, aes(x = reorder(factor(LocationID), -TripCount), y = TripCount)) +
+  geom_bar(stat = "identity", fill = "pink") +
+  labs(title = "Top 10 Pick up Zones during Evening Rush(4PM–7PM)", x = "Zone", y = "Trip Count") +
+  scale_y_continuous(labels = comma) +
+  theme_minimal()
+
+```
+
+
+```{r}
+# Evening Drop-off
+ggplot(top10_evening_do, aes(x = reorder(factor(LocationID), -TripCount), y = TripCount)) +
+  geom_bar(stat = "identity", fill = "magenta") +
+  labs(title = "Top 10 Drop-off Zones during Evening Rush(4PM–7PM)", x = "Zone", y = "Trip Count") +
+  scale_y_continuous(labels = comma) +
+  theme_minimal()
+
+```
